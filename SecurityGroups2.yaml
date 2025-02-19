@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Security Groups para la plantilla de Ubuntu con Tomcat y Apache
+
+Resources:
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow SSH access"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"  # Permite acceso SSH desde cualquier IP
+      
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow HTTP access"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"  # Permite acceso HTTP desde cualquier IP
+      
+
+  HttpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow HTTP access"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"  # Permite acceso HTTP desde cualquier IP
+
+Outputs:
+  SSHSecurityGroupId:
+    Description: "Security Group ID for SSH access"
+    Value: !Ref SSHSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-SSHSecurityGroupId"
+
+  WebSecurityGroupId:
+    Description: "Security Group ID for Web access"
+    Value: !Ref WebSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-WebSecurityGroupId"
+
+  HttpSecurityGroupId:
+    Description: "Security Group ID for HTTP access"
+    Value: !Ref HttpSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-HttpSecurityGroupId"

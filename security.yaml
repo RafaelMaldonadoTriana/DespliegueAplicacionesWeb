@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Plantilla Basica Grupos de Seguridad Renombrados
+
+Resources:
+  AdminAccessGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Trafico SSH
+      GroupName: AdminAccessGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+  WebTrafficGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Trafico HTTP
+      GroupName: WebTrafficGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  AppServerGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Trafico en puerto 8080
+      GroupName: AppServerGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+          
+  DatabaseAccessGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Trafico en puerto 3306
+      GroupName: DatabaseAccessGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+          
+Outputs:
+  AdminAccessGroupId:
+    Description: ID grupo de seguridad SSH
+    Value: !Ref AdminAccessGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-AdminAccessGroupId"
+  WebTrafficGroupId:
+    Description: ID grupo de seguridad HTTP
+    Value: !Ref WebTrafficGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-WebTrafficGroupId"
+  AppServerGroupId:
+    Description: ID grupo de seguridad Tomcat
+    Value: !Ref AppServerGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-AppServerGroupId"
+  DatabaseAccessGroupId:
+    Description: ID grupo de seguridad MySQL
+    Value: !Ref DatabaseAccessGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-DatabaseAccessGroupId"

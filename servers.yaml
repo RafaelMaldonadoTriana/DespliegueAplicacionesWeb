@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Plantilla Basica F-B-D
+
+Parameters:
+  SecurityStackName:
+    Description: pila securitygroups
+    Type: String
+    Default: securitygroups-renamed
+  InstanceTypeParameter:
+    Description: Enter t2.micro, t2.small, t2.nano, or t2.medium. Default is t2.large. 
+    Type: String
+    Default: t2.large
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.nano
+      - t2.medium
+      - t2.large
+  InstanceImage:
+    Description: Instance AMI 
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: '/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id'
+
+Resources:
+  WebFrontend:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref InstanceImage
+      InstanceType: !Ref InstanceTypeParameter
+      KeyName: vockey
+      SecurityGroupIds:
+        - Fn::ImportValue: 
+            !Sub "${SecurityStackName}-AppServerGroupId"
+        - Fn::ImportValue: 
+            !Sub "${SecurityStackName}-AdminAccessGroupId"
+        - Fn::ImportValue: 
+            !Sub "${SecurityStackName}-WebTrafficGroupId"
+      Tags:
+        - Key: Name
+          Value: WebFrontendInstance
+      UserData: 
+        Fn::Base64: 
+          !Sub 
+            - |
+              #!/bin/bash -xe
+              exec > /tmp/userdata.log 2>&1
+
+              
+              # INSTALO VARIAS COSAS
+              
+              apt update -y
+              apt install python3-pip -y
+              pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+              ln -s /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+
+              
+              # INSTALO APACHE
+
+              apt install apache2 -y
+              a2enmod proxy
+              a2enmod proxy_http
+              a2enmod rewrite  # Asegurarse de que el módulo de reescritura esté habilitado
+
+              # VIRTUALHOST
+              echo "<VirtualHost *:80>
+                  DocumentRoot /var/www/students
+                  ProxyPass /api/ http://${BackendPrivateIp}:8080/studentify/api/
+                  ProxyPassReverse /api/ http://${BackendPrivateIp}:8080/studentify/api/
+              </VirtualHost>" | tee /etc/apache2/sites-available/students.conf
+
+              a2ensite students
+              a2dissite 000-default
+
+              # CLONAR REPOSITORIO
+
+              cd /tmp
+              git clone https://github.com/DavidHormigoRamirez/frontend_daw.git
+              cd frontend_daw
+
+              # Reemplazar la URL 'CAMBIAR' por la correcta en los archivos HTML
+              sed -i "s#fetch('CAMBIAR')#fetch('/api/students')#g" index.html
+              sed -i "s#fetch('CAMBIAR',#fetch('/api/students',#g" create.html
+
+              # Configurar los archivos estáticos
+              mkdir /var/www/students
+              cp *.html /var/www/students
+
+              # Reiniciar Apache para aplicar la configuración
+              systemctl restart apache2
+
+              # Señal de finalización
+              /usr/local/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource Frontend --region ${AWS::Region}
+            - BackendPrivateIp: !GetAtt AppBackend.PrivateIp
+
+  AppBackend:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref InstanceImage
+      InstanceType: !Ref InstanceTypeParameter
+      KeyName: vockey
+      SecurityGroupIds:
+        - Fn::ImportValue: 
+            !Sub "${SecurityStackName}-AdminAccessGroupId"
+        - Fn::ImportValue: 
+            !Sub "${SecurityStackName}-AppServerGroupId"
+      Tags:
+        - Key: Name
+          Value: AppBackendInstance
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash -xe
+            exec > /tmp/userdata.log 2>&1
+
+            
+            # INSTALO VARIAS COSAS
+
+            apt update -y
+            apt install -y apache2 php libapache2-mod-php php-mysql mysql-client git python3-pip
+
+            
+
+            pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+            ln -s /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+
+            # CONFIGURAR APACHE
+
+            a2enmod rewrite
+
+            cat <<EOF > /etc/apache2/sites-available/000-default.conf
+            <VirtualHost *:80>
+                DocumentRoot /var/www/html
+                <Directory /var/www/html>
+                    Options Indexes FollowSymLinks
+                    AllowOverride All
+                    Require all granted
+                </Directory>
+            </VirtualHost>
+            EOF
+
+            systemctl restart apache2
+
+            # CLONAR REPOSITORIO
+
+
+            rm -rf /var/www/html
+
+            git clone https://github.com/DavidHormigoRamirez/backend_daw.git /var/www/html/
+
+            chown -R www-data:www-data /var/www/html
+            chmod -R 755 /var/www/html
+
+  
+
+            # REMPLAZO VALORES
+            sed -i "s/define('DB_HOST', 'TOBECHANGED');/define('DB_HOST', 'localhost');/" /var/www/html/api/db.php
+            sed -i "s/define('DB_NAME', 'TOBECHANGED');/define('DB_NAME', 'student_db');/" /var/www/html/api/db.php
+            sed -i "s/define('DB_USER', 'TOBECHANGED');/define('DB_USER', 'phpuser');/" /var/www/html/api/db.php
+            sed -i "s/define('DB_PASS', 'TOBECHANGED');/define('DB_PASS', 'dejame');/" /var/www/html/api/db.php
+
+            echo "Archivo db.php modificado correctamente."
+
+            # LO TENFO QUE PONER SIEMPRE
+
+            /usr/local/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AppBackend --region ${AWS::Region}
+
+            
+  DatabaseServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref InstanceImage
+      InstanceType: !Ref InstanceTypeParameter
+      KeyName: vockey
+      SecurityGroupIds:
+        - Fn::ImportValue: 
+            !Sub "${SecurityStackName}-AdminAccessGroupId"
+        - Fn::ImportValue: 
+            !Sub "${SecurityStackName}-DatabaseAccessGroupId"
+      Tags:
+        - Key: Name
+          Value: DatabaseServerInstance
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash -xe
+            exec > /tmp/userdata.log 2>&1
+
+            # INSTALO VARIAS COSAS
+
+            apt update -y
+            apt install python3-pip -y
+            pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+            ln -s /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+
+            # DESCARGO MYSQL Y CONFIGURO
+
+            sed -i "s/#\$nrconf{kernelhints} = -1;/\$nrconf{kernelhints} = -1;/g" /etc/needrestart/needrestart.conf
+
+            apt update
+            apt upgrade -y
+
+            DB_NAME="student_db"
+            DB_USER="phpuser"
+            DB_PASSWORD="dejame"
+
+            apt install -y mysql-server
+            
+
+            # INCIO MYSQL
+
+            systemctl start mysql
+            systemctl enable mysql
+            sleep 5 
+
+            # CREO BBDD
+            mysql -e "
+            CREATE DATABASE IF NOT EXISTS $DB_NAME;
+            USE $DB_NAME;
+            CREATE TABLE IF NOT EXISTS students (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(50),
+                email VARCHAR(100) NOT NULL
+            );
+            CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
+            GRANT SELECT, INSERT ON $DB_NAME.* TO '$DB_USER'@'%';
+            FLUSH PRIVILEGES;
+            "
+
+            if [ -f "/etc/mysql/mysql.conf.d/mysqld.cnf" ]; then
+                MYSQL_CNF="/etc/mysql/mysql.conf.d/mysqld.cnf"
+            elif [ -f "/etc/mysql/my.cnf" ]; then
+                MYSQL_CNF="/etc/mysql/my.cnf"
+            else
+                echo "No se encontró el archivo de configuración de MySQL. Abortando."
+                exit 1
+            fi
+
+            sed -i 's/^bind-address\s*=.*/bind-address = 0.0.0.0/' "$MYSQL_CNF"
+            systemctl restart mysql
+
+            /usr/local/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource DatabaseServer --region ${AWS::Region}
+
+Outputs:
+  AppUrl:
+    Description: URL de la app desplegada
+    Value:
+      Fn::Sub:
+        - "http://${WebFrontendDns}:80"
+        - WebFrontendDns: !GetAtt WebFrontend.PublicDnsName
